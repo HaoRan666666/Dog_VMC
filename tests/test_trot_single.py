@@ -43,13 +43,26 @@ except (ImportError, RuntimeError):
 # ════════════════════════════════════
 LEG_NAMES = {0: "LF", 1: "RF", 2: "LB", 3: "RB"}
 JOINT_NAMES = {0: "ABD", 1: "HIP", 2: "KNEE"}
-MOTOR_MAP = {0: (1, 2, 3), 1: (None, 1, 2), 2: (7, 8, 9), 3: (10, 11, 12)}
+MOTOR_MAP = {
+    0: (1, 2, 3, "can0"),   # LF
+    1: (1, 2, 3, "can1"),   # RF
+    2: (1, 2, 3, "can2"),   # LB
+    3: (1, 2, 3, "can3"),   # RB
+}
 
-# ── 零点偏移 (rad): q_kinematic = JOINT_SIGN * (q_motor_raw - ZERO_OFFSET) ──
-ZERO_OFFSET = [0.0, 0.0, -0.8880]   # ABD, HIP, KNEE: knee ref=-50.88deg
+ZERO_OFFSET = {
+    0: [0.0, 0.0, 0.8111],     # LF
+    1: [0.0, 0.0, -0.8111],    # RF
+    2: [0.0, 0.0, 0.8111],     # LB
+    3: [0.0, 0.0, -0.8111],    # RB
+}
 
-# ── 电机方向修正: +1 同向, -1 反向 ──
-JOINT_SIGN = [1.0, -1.0, -1.0]      # ABD, HIP, KNEE
+JOINT_SIGN = {
+    0: [1.0, 1.0, 1.0],      # LF
+    1: [1.0, -1.0, -1.0],    # RF — 已验证
+    2: [-1.0, 1.0, 1.0],     # LB
+    3: [-1.0, -1.0, -1.0],   # RB
+}
 
 # ── 安全参数 ──
 SAFE = {
@@ -109,11 +122,12 @@ class SingleLegInterface:
             self._init_real()
 
     def _init_real(self):
-        ids = MOTOR_MAP.get(self.leg, (1, 2, 3))
+        entry = MOTOR_MAP.get(self.leg, (1, 2, 3, "can0"))
+        ids, can_if = entry[:3], entry[3]
         for j, mid in enumerate(ids):
             if mid is None:
                 continue
-            m = motors_py.MotorDriver.create_motor(mid, "CAN", "can0", "LRO_CAN", 2)
+            m = motors_py.MotorDriver.create_motor(mid, "CAN", can_if, "LRO_CAN", 2)
             m.init_motor()
             self.motors[j] = m
 
@@ -125,7 +139,7 @@ class SingleLegInterface:
         for j, m in self.motors.items():
             m.refresh_motor_status()
             raw = m.get_motor_pos()
-            q[j] = JOINT_SIGN[j] * (raw - ZERO_OFFSET[j])
+            q[j] = JOINT_SIGN[self.leg][j] * (raw - ZERO_OFFSET[self.leg][j])
         return q
 
     def send_mit(self, q_kin, vel, kp, kd, ff):
@@ -135,7 +149,7 @@ class SingleLegInterface:
                 self.q_sim[j] += 0.5 * (q_kin[j] - self.q_sim[j])
             return
         for j, m in self.motors.items():
-            raw = ZERO_OFFSET[j] + JOINT_SIGN[j] * q_kin[j]
+            raw = ZERO_OFFSET[self.leg][j] + JOINT_SIGN[self.leg][j] * q_kin[j]
             m.motor_mit_cmd(raw, vel, kp, kd, ff)
 
     def lock(self):

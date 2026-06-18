@@ -46,13 +46,13 @@ except (ImportError, RuntimeError):
 SAFE = {
     "kp_stand": 100.0,      # 站立保持刚度
     "kd_stand": 3.0,
-    "kp_trans": 80.0,      # 过渡阶段刚度（更软）
-    "kd_trans": 2.0,
+    "kp_trans": 100.0,      # 过渡阶段刚度（更软）
+    "kd_trans": 3.0,
     "max_pos_err": 0.4,    # 跟踪误差急停 (rad)
     "tuck_in_time": 2.0,   # 收拢时间 (s)
     "stand_up_time": 3.0,  # 起立时间 (s)
     "lie_down_time": 2.5,  # 趴下时间 (s)
-    "hold_time": 5.0,      # 站立保持时间 (s)
+    "hold_time": 1.0,      # 站立保持时间 (s)
     "dt": 0.01,            # 控制周期 100Hz
 }
 
@@ -384,6 +384,21 @@ def main():
         s_curve_transition(hw, legs, q_rest, SAFE["lie_down_time"],
                            kp_t, kd_t, label="趴下")
         print("  ✓ 趴下完成")
+
+        # ─── 保持趴下，按 Enter 退出 ───
+        if not args.sim:
+            print("\n保持趴下，按 Enter 卸力退出...", end="", flush=True)
+            keep_rest = [True]
+            def wait_exit():
+                input()
+                keep_rest[0] = False
+            threading.Thread(target=wait_exit, daemon=True).start()
+            while keep_rest[0]:
+                for leg in legs:
+                    tgt = q_rest[leg]
+                    for j in range(3):
+                        hw.send_mit(leg, j, tgt[j], 0.0, kp_s, kd_s, 0.0)
+                time.sleep(SAFE["dt"])
 
     except KeyboardInterrupt:
         print("\n用户中断！")

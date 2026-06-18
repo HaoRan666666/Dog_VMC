@@ -51,15 +51,18 @@ MOTOR_MAP = {
 }
 
 # ── 零点偏移 (rad): q_kinematic = JOINT_SIGN * (q_motor_raw - ZERO_OFFSET) ──
-ZERO_OFFSET = [0.0, 0.0, -0.8880]   # ABD, HIP, KNEE: knee ref=-50.88deg
+ZERO_OFFSET = {
+    0: [0.0, 0.0, 0.8111],     # LF
+    1: [0.0, 0.0, -0.8111],    # RF
+    2: [0.0, 0.0, 0.8111],     # LB
+    3: [0.0, 0.0, -0.8111],    # RB
+}
 
-# ── 每条腿的电机方向修正: +1 同向, -1 反向 ──
-# RF 已验证; 其余按镜像关系: 前腿 HIP=-1, 后腿 HIP=+1
 JOINT_SIGN = {
-    0: [1.0, -1.0, -1.0],   # LF: 同RF镜像
-    1: [1.0, -1.0, -1.0],   # RF: 已验证
-    2: [1.0,  1.0, -1.0],   # LB: HIP反
-    3: [1.0,  1.0, -1.0],   # RB: HIP反
+    0: [1.0, 1.0, 1.0],      # LF
+    1: [1.0, -1.0, -1.0],    # RF — 已验证
+    2: [-1.0, 1.0, 1.0],     # LB
+    3: [-1.0, -1.0, -1.0],   # RB
 }
 
 # ── 安全参数 ──
@@ -146,7 +149,7 @@ class QuadInterface:
             if m:
                 m.refresh_motor_status()
                 raw = m.get_motor_pos()
-                q[j] = JOINT_SIGN[leg][j] * (raw - ZERO_OFFSET[j])
+                q[j] = JOINT_SIGN[leg][j] * (raw - ZERO_OFFSET[leg][j])
         return q
 
     def send_mit(self, leg, q_kin, vel, kp, kd, ff):
@@ -161,7 +164,7 @@ class QuadInterface:
         for j in range(3):
             m = self.motors.get((leg, j))
             if m:
-                raw = ZERO_OFFSET[j] + JOINT_SIGN[leg][j] * q_kin[j]
+                raw = ZERO_OFFSET[leg][j] + JOINT_SIGN[leg][j] * q_kin[j]
                 m.motor_mit_cmd(raw, vel, kp, kd, ff)
 
     def lock_all(self):
@@ -331,7 +334,7 @@ def main():
     parser.add_argument("--sim", action="store_true")
     parser.add_argument("--dx", type=float, default=0.06)
     parser.add_argument("--dy", type=float, default=0.082)
-    parser.add_argument("--stand_z", type=float, default=-0.35)
+    parser.add_argument("--stand_z", type=float, default=-0.3)
     args = parser.parse_args()
 
     if not args.sim and not HAS_MOTORS:
