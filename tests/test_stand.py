@@ -4,10 +4,11 @@
 
 测试流程：
   0  通信检查    — 读取所有目标腿的电机状态
-  1  起立        — S 曲线从当前姿态插值到站立姿态
-  2  站立保持    — 保持站立 N 秒
-  3  趴下        — S 曲线回到趴下姿态
-  4  卸力        — 锁定电机
+  1  收拢        — S 曲线从当前姿态（断电外八）过渡到趴下姿态
+  2  起立        — S 曲线从趴下姿态过渡到站立姿态
+  3  站立保持    — 保持站立 N 秒
+  4  趴下        — S 曲线回到趴下姿态
+  5  卸力        — 锁定电机
 
 用法：
   python3 tests/test_stand.py --legs all --sim              # 四腿仿真
@@ -20,6 +21,7 @@ import argparse
 import math
 import os
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Controller', 'build'))
@@ -42,11 +44,12 @@ except (ImportError, RuntimeError):
 # 配置
 # ════════════════════════════════════
 SAFE = {
-    "kp_stand": 30.0,      # 站立保持刚度
+    "kp_stand": 100.0,      # 站立保持刚度
     "kd_stand": 3.0,
-    "kp_trans": 20.0,      # 过渡阶段刚度（更软）
+    "kp_trans": 80.0,      # 过渡阶段刚度（更软）
     "kd_trans": 2.0,
     "max_pos_err": 0.4,    # 跟踪误差急停 (rad)
+    "tuck_in_time": 2.0,   # 收拢时间 (s)
     "stand_up_time": 3.0,  # 起立时间 (s)
     "lie_down_time": 2.5,  # 趴下时间 (s)
     "hold_time": 5.0,      # 站立保持时间 (s)
@@ -55,13 +58,29 @@ SAFE = {
 
 LEG_NAMES = {0: "LF", 1: "RF", 2: "LB", 3: "RB"}
 JOINT_NAMES = {0: "ABD", 1: "HIP", 2: "KNEE"}
-MOTOR_MAP = {0: (1, 2, 3), 1: (None, 1, 2), 2: (7, 8, 9), 3: (10, 11, 12)}
+# (ABD, HIP, KNEE, CAN接口)
+MOTOR_MAP = {
+    0: (1, 2, 3, "can0"),   # LF
+    1: (1, 2, 3, "can1"),   # RF
+    2: (1, 2, 3, "can2"),   # LB
+    3: (1, 2, 3, "can3"),   # RB
+}
 
 # ── 零点偏移 (rad): q_kinematic = JOINT_SIGN * (q_motor_raw - ZERO_OFFSET) ──
-ZERO_OFFSET = [0.0, 0.0, -0.8880]   # ABD, HIP, KNEE: knee ref=-50.88deg
+ZERO_OFFSET = {
+    0: [0.0, 0.0, 0.8111],     # LF
+    1: [0.0, 0.0, -0.8111],    # RF
+    2: [0.0, 0.0, 0.8111],     # LB
+    3: [0.0, 0.0, -0.8111],    # RB
+}
 
 # ── 电机方向修正: +1 同向, -1 反向 ──
-JOINT_SIGN = [1.0, -1.0, -1.0]      # ABD, HIP, KNEE
+JOINT_SIGN = {
+    0: [1.0, 1.0, 1.0],      # LF
+    1: [1.0, -1.0, -1.0],    # RF — 已验证
+    2: [-1.0, 1.0, 1.0],    # LB
+    3: [-1.0, -1.0, -1.0],   # RB
+}
 
 
 def ik_foot_below_hip(kin, dx, dy, z=-0.25):
@@ -79,28 +98,35 @@ def ik_rest_pose(kin, dx, dy, z=-0.12):
 # ════════════════════════════════════
 
 class MultiLegInterface:
-    def __init__(self, legs, sim, dx=0.0, dy=0.0):
-        self.legs = legs           # list of leg indices
+    def __init__(self, legs, sim, dx=0.0, dy=0.0, dx_rear=None):
+        self.legs = legs
         self.sim = sim
-        self.motors = {}           # (leg, joint) → motor
-        self.q_sim = {}            # (leg, joint) → simulated angle
+        self.motors = {}
+        self.q_sim = {}
         self.kinematics = {}
+        if dx_rear is None:
+            dx_rear = -dx
 
         for leg in legs:
-            x_sign = 1.0 if leg in (0, 1) else -1.0
             y_sign = 1.0 if leg in (0, 2) else -1.0
-            self.kinematics[leg] = vmc.LegKinematics(0.2125, 0.25025, x_sign * dx, y_sign * dy)
+            dy_s = y_sign * dy
+            if leg in (0, 1):
+                dx_s = dx
+            else:
+                dx_s = dx_rear
+            self.kinematics[leg] = vmc.LegKinematics(0.2125, 0.25025, dx_s, dy_s)
 
         if not sim and HAS_MOTORS:
             self._init_real()
 
     def _init_real(self):
         for leg in self.legs:
-            ids = MOTOR_MAP.get(leg, (1, 2, 3))
+            entry = MOTOR_MAP.get(leg, (1, 2, 3, "can0"))
+            ids, can_if = entry[:3], entry[3]
             for j, mid in enumerate(ids):
                 if mid is None:
                     continue
-                m = motors_py.MotorDriver.create_motor(mid, "CAN", "can0", "LRO_CAN", 2)
+                m = motors_py.MotorDriver.create_motor(mid, "CAN", can_if, "LRO_CAN", 2)
                 m.init_motor()
                 self.motors[(leg, j)] = m
 
@@ -117,7 +143,7 @@ class MultiLegInterface:
                 if m:
                     m.refresh_motor_status()
                     raw = m.get_motor_pos()
-                    state[j] = {"pos": JOINT_SIGN[j] * (raw - ZERO_OFFSET[j])}
+                    state[j] = {"pos": JOINT_SIGN[leg][j] * (raw - ZERO_OFFSET[leg][j])}
                 else:
                     state[j] = {"pos": 0.0}
         return state
@@ -131,7 +157,7 @@ class MultiLegInterface:
         else:
             m = self.motors.get(key)
             if m:
-                raw = ZERO_OFFSET[joint] + JOINT_SIGN[joint] * pos
+                raw = ZERO_OFFSET[leg][joint] + JOINT_SIGN[leg][joint] * pos
                 m.motor_mit_cmd(raw, vel, kp, kd, ff)
 
     def lock_all(self):
@@ -197,12 +223,15 @@ def main():
     parser.add_argument("--legs", type=str, default="all",
                         help="测试腿: 'all' 或 '0,1,2,3' 或单个 '2'")
     parser.add_argument("--sim", action="store_true")
-    parser.add_argument("--dx", type=float, default=0.06)
+    parser.add_argument("--dx", type=float, default=0.06,
+                        help="前腿 X 偏置 (m)")
+    parser.add_argument("--dx_rear", type=float, default=-0.10,
+                        help="后腿 X 偏置 (m)，负值=往后")
     parser.add_argument("--dy", type=float, default=0.082)
     parser.add_argument("--stand_z", type=float, default=-0.38,
-                        help="站立时足端 Z (负数)，默认 -0.30")
+                        help="站立时足端 Z (负数)")
     parser.add_argument("--rest_z", type=float, default=-0.15,
-                        help="趴下时足端 Z (负数)，默认 -0.12")
+                        help="趴下时足端 Z (负数)")
     args = parser.parse_args()
 
     if not args.sim and not HAS_MOTORS:
@@ -226,19 +255,22 @@ def main():
     if not args.sim:
         input("按 Enter 开始...")
 
-    hw = MultiLegInterface(legs, args.sim, args.dx, args.dy)
+    hw = MultiLegInterface(legs, args.sim, args.dx, args.dy, args.dx_rear)
 
     # 计算各腿目标姿态
     q_stand = {}   # 站立
     q_rest = {}    # 趴下
     for leg in legs:
-        x_sign = 1.0 if leg in (0, 1) else -1.0
         y_sign = 1.0 if leg in (0, 2) else -1.0
-        dx_s = x_sign * args.dx
         dy_s = y_sign * args.dy
+        if leg in (0, 1):
+            dx_s = args.dx          # 前腿
+        else:
+            dx_s = args.dx_rear     # 后腿（负值=往后）
         kin = hw.kinematics[leg]
         q_stand[leg] = ik_foot_below_hip(kin, dx_s, dy_s, args.stand_z)
         q_rest[leg] = ik_rest_pose(kin, dx_s, dy_s, args.rest_z)
+    
 
     # 打印目标姿态
     print(f"\n目标姿态:")
@@ -265,14 +297,53 @@ def main():
             print(f"  {LEG_NAMES[leg]}: ABD={qs[0]} HIP={qs[1]} KNEE={qs[2]}")
         print("  ✓")
 
-        # ─── 阶段 1：起立 ───
-        print(f"\n阶段 1：起立（{SAFE['stand_up_time']}s）")
+        # ─── 阶段 1：收拢（当前外八 → 趴下） ───
+        if not args.sim:
+            input("\n按 Enter 开始收拢...")
+        print(f"\n阶段 1：收拢（{SAFE['tuck_in_time']}s）")
+        s_curve_transition(hw, legs, q_rest, SAFE["tuck_in_time"],
+                           kp_t, kd_t, label="收拢")
+        print("  ✓ 收拢完成")
+
+        # ─── 阶段 2：起立 ───
+        if not args.sim:
+            print("\n保持趴下，按 Enter 起立...", end="", flush=True)
+            keep_rest = [True]
+            def wait_enter_2():
+                input()
+                keep_rest[0] = False
+            t = threading.Thread(target=wait_enter_2, daemon=True)
+            t.start()
+            while keep_rest[0]:
+                for leg in legs:
+                    tgt = q_rest[leg]
+                    for j in range(3):
+                        hw.send_mit(leg, j, tgt[j], 0.0, kp_s, kd_s, 0.0)
+                time.sleep(SAFE["dt"])
+        # ─── 阶段 2：起立 ───
+        if not args.sim:
+            input("\n按 Enter 开始起立...")
+        print(f"\n阶段 2：起立（{SAFE['stand_up_time']}s）")
         s_curve_transition(hw, legs, q_stand, SAFE["stand_up_time"],
                            kp_t, kd_t, label="起立")
         print("  ✓ 起立完成")
 
-        # ─── 阶段 2：站立保持 ───
-        print(f"\n阶段 2：站立保持 {SAFE['hold_time']}s ...", end="", flush=True)
+        # ─── 阶段 3：站立保持 ───
+        if not args.sim:
+            print("\n保持站立，按 Enter 开始站立保持...", end="", flush=True)
+            keep_stand_wait = [True]
+            def wait_enter_3():
+                input()
+                keep_stand_wait[0] = False
+            t = threading.Thread(target=wait_enter_3, daemon=True)
+            t.start()
+            while keep_stand_wait[0]:
+                for leg in legs:
+                    tgt = q_stand[leg]
+                    for j in range(3):
+                        hw.send_mit(leg, j, tgt[j], 0.0, kp_s, kd_s, 0.0)
+                time.sleep(SAFE["dt"])
+        print(f"\n阶段 3：站立保持 {SAFE['hold_time']}s ...", end="", flush=True)
         steps = int(SAFE["hold_time"] / SAFE["dt"])
         for i in range(steps):
             for leg in legs:
@@ -293,8 +364,23 @@ def main():
                     break
         print("\n  ✓ 站立保持完成")
 
-        # ─── 阶段 3：趴下 ───
-        print(f"\n阶段 3：趴下（{SAFE['lie_down_time']}s）")
+
+        # ─── 阶段 4：趴下 ───
+        if not args.sim:
+            print("\n站立中，按 Enter 趴下...", end="", flush=True)
+            keep_standing = [True]
+            def wait_enter():
+                input()
+                keep_standing[0] = False
+            t = threading.Thread(target=wait_enter, daemon=True)
+            t.start()
+            while keep_standing[0]:
+                for leg in legs:
+                    tgt = q_stand[leg]
+                    for j in range(3):
+                        hw.send_mit(leg, j, tgt[j], 0.0, kp_s, kd_s, 0.0)
+                time.sleep(SAFE["dt"])
+        print(f"\r阶段 4：趴下（{SAFE['lie_down_time']}s）")
         s_curve_transition(hw, legs, q_rest, SAFE["lie_down_time"],
                            kp_t, kd_t, label="趴下")
         print("  ✓ 趴下完成")

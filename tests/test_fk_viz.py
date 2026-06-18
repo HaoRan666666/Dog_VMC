@@ -41,15 +41,15 @@ except (ImportError, RuntimeError):
 LEG_NAMES = {0: "LF", 1: "RF", 2: "LB", 3: "RB"}
 
 # ── 零点偏移 (rad)：q_kinematic = JOINT_SIGN * (q_motor_raw - ZERO_OFFSET) ──
-ZERO_OFFSET = [0.0, 0.0, -0.8880]   # ABD, HIP, KNEE: knee ref=-50.88deg at raw=0
+ZERO_OFFSET = [0.0, 0.0, -0.8111]   # ABD, HIP, KNEE: knee ref=-50.88deg at raw=0
 
 # ── 电机方向修正：+1 同向，-1 反向 ──
-JOINT_SIGN = [1.0, -1.0, -1.0]       # ABD, HIP, KNEE
+JOINT_SIGN = [-1.0, -1.0, -1.0]       # ABD, HIP, KNEE
 
 
 def main():
     parser = argparse.ArgumentParser(description="单腿 FK 可视化")
-    parser.add_argument("--leg", type=int, default=1, choices=[0, 1, 2, 3])
+    parser.add_argument("--leg", type=int, default=3, choices=[0, 1, 2, 3])
     parser.add_argument("--dx", type=float, default=0.06)
     parser.add_argument("--dy", type=float, default=0.082)
     args = parser.parse_args()
@@ -64,14 +64,14 @@ def main():
     motors = {}
     sim_mode = True
     # RF: ABD=None, HIP=CAN1, KNEE=CAN2
-    MOTOR_MAP = {0: (1, 2, 3), 1: (None, 1, 2), 2: (7, 8, 9), 3: (10, 11, 12)}
+    MOTOR_MAP = {0: (1, 2, 3), 1: (1, 2, 3), 2: (1, 2, 3), 3: (1, 2, 3)}
     ids = MOTOR_MAP.get(args.leg, (None, 1, 2))
     if HAS_MOTORS:
         try:
             for j, mid in enumerate(ids):
                 if mid is None:
                     continue
-                m = motors_py.MotorDriver.create_motor(mid, "CAN", "can0", "LRO_CAN", 2)
+                m = motors_py.MotorDriver.create_motor(mid, "CAN", "can3", "LRO_CAN", 2)
                 m.init_motor()
                 motors[j] = m
             sim_mode = False

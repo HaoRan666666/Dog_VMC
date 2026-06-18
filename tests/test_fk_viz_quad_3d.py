@@ -48,13 +48,19 @@ MOTOR_MAP = {
     3: (1, 2, 3, "can3"),   # RB
 }
 
-ZERO_OFFSET = [0.0, 0.0, -0.8880]
+ZERO_OFFSET = {
+    0: [0.0, 0.0, 0.8111],
+    1: [0.0, 0.0, -0.8111],
+    2: [0.0, 0.0, 0.8111],
+    3: [0.0, 0.0, -0.8111],
+}
+
 
 JOINT_SIGN = {
-    0: [1.0, -1.0, -1.0],   # LF
+    0: [1.0, 1.0, 1.0],   # LF
     1: [1.0, -1.0, -1.0],   # RF — 已验证
-    2: [1.0,  1.0, -1.0],   # LB
-    3: [1.0,  1.0, -1.0],   # RB
+    2: [-1.0,1.0, 1.0],   # LB
+    3: [-1.0,-1.0, -1.0],   # RB
 }
 
 DX, DY = 0.06, 0.082
@@ -147,7 +153,7 @@ class QuadFKReader:
             if m:
                 m.refresh_motor_status()
                 raw = m.get_motor_pos()
-                q[j] = JOINT_SIGN[leg][j] * (raw - ZERO_OFFSET[j])
+                q[j] = JOINT_SIGN[leg][j] * (raw - ZERO_OFFSET[leg][j])
         return q
 
     def lock_all(self):
