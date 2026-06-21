@@ -99,6 +99,10 @@ L_CALF  = 0.25025   # 小腿长度 (m)
 HIP_DX  = 0.06      # ABD→HIP 前后偏置 (绝对值)
 HIP_DY  = 0.082     # ABD→HIP 左右偏置 (绝对值)
 
+# 足端 X 微调（叠加到 dx_s 上，负→更靠后，正→更靠前）
+FOOT_X_OFFSET = {0: 0.0, 1: 0.0, 2: -0.03, 3: -0.03}
+
+
 # 机身几何（COM 系）
 BODY_LENGTH = 0.42  # 前后髋间距 (m)
 BODY_WIDTH  = 0.154 # 左右髋间距 (m)
@@ -492,8 +496,8 @@ class QuadrupedJoyNode(Node):
         # 计算目标足端位置对应的关节角
         q_targets = {}
         for leg in self.legs:
-            q_targets[leg] = self._ik_foot(leg, self.hw.dx_s[leg], self.hw.dy_s[leg],
-                                            self.target_foot_z)
+            q_targets[leg] = self._ik_foot(leg, self._foot_center_x(leg),
+                                            self.hw.dy_s[leg], self.target_foot_z)
 
         dt = CONTROL_DT
         steps = int(duration / dt)
@@ -530,6 +534,10 @@ class QuadrupedJoyNode(Node):
             if phase >= duty:
                 return False
         return True
+
+    def _foot_center_x(self, leg):
+        """站立足端 X 原点 = 关节偏置 + 可调偏移。"""
+        return self.hw.dx_s[leg] + FOOT_X_OFFSET[leg]
 
     def _ik_foot(self, leg, dx, dy, z):
         """计算足端在 (dx, dy, z) 处的关节角。"""
@@ -596,8 +604,8 @@ class QuadrupedJoyNode(Node):
         if self.state in (RobotState.CROUCH, RobotState.STANDING):
             # 静态站立：保持足端在目标位置
             for leg in self.legs:
-                q = self._ik_foot(leg, self.hw.dx_s[leg], self.hw.dy_s[leg],
-                                  self.foot_stand_z)
+                q = self._ik_foot(leg, self._foot_center_x(leg),
+                                  self.hw.dy_s[leg], self.foot_stand_z)
                 self.hw.send_mit(leg, q, 0.0, KP_STAND, KD_STAND, 0.0)
 
         elif self.state == RobotState.TROTTING:
@@ -618,7 +626,7 @@ class QuadrupedJoyNode(Node):
         切线 ⊥ (足端_COM → COM)，yaw>0 对应 CW（右转）。
         """
         # 站立足端在 COM 系下的坐标
-        fx = HIP_COM_X[leg] + self.hw.dx_s[leg]
+        fx = HIP_COM_X[leg] + self._foot_center_x(leg)
         fy = HIP_COM_Y[leg] + self.hw.dy_s[leg]
         # CW 切线 = (-fy, fx)
         tx, ty = -fy, fx
@@ -667,7 +675,7 @@ class QuadrupedJoyNode(Node):
             z = self.foot_stand_z if in_stance else \
                 self.foot_stand_z + step_h * lift_curve(phase_s)
 
-            foot = vmc.Vec3(self.hw.dx_s[leg] + x_off,
+            foot = vmc.Vec3(self._foot_center_x(leg) + x_off,
                             self.hw.dy_s[leg] + y_off,
                             z)
 
