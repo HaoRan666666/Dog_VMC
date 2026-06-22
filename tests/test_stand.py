@@ -24,11 +24,11 @@ import sys
 import threading
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Controller', 'build'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'kinematics', 'build'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Module', 'motors', 'build'))
 
 try:
-    import vmc_controller_py as vmc
+    import kinematics_py as vmc
 except ImportError:
     print("请先编译 Controller")
     sys.exit(1)

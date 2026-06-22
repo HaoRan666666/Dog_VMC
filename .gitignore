@@ -1,26 +1,33 @@
-# Build artifacts
+# ── colcon workspace ──
 build/
-*.so
-*.a
-*.o
+install/
+log/
 
-# Python
-__pycache__/
-*.pyc
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# CMake
+# ── CMake artifacts ──
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 compile_commands.json
 CTestTestfile.cmake
+Makefile
 
-# OS
+# ── Compiled binaries ──
+*.so
+*.a
+*.o
+
+# ── Python ──
+__pycache__/
+*.pyc
+*.egg-info/
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS ──
 .DS_Store
 Thumbs.db
