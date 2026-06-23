@@ -91,3 +91,9 @@ ros2 run quad_control quad_control &
 | 十字键上下 | 调抬腿高度 |
 
 详见 [docs/使用说明书.md](docs/使用说明书.md)
+
+
+### 开机后运行 不然识别不到手柄
+sudo modprobe xpad
+sudo modprobe joydev
+echo 2dc8 310a | sudo tee /sys/bus/usb/drivers/xpad/new_id

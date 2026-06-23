@@ -27,8 +27,8 @@ import sys
 import threading
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'motors', 'build'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'kinematics', 'build'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Module', 'motors', 'build'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'kinematics', 'build'))
 
 import rclpy
 from rclpy.node import Node
@@ -37,7 +37,7 @@ from sensor_msgs.msg import Joy
 try:
     import kinematics_py as vmc
 except ImportError:
-    print("错误：未找到 vmc_controller_py 模块（需要其中的 LegKinematics），请先编译 Controller")
+    print("错误：未找到 kinematics_py 模块，请先编译 kinematics")
     sys.exit(1)
 
 try:

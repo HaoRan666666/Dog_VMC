@@ -103,7 +103,7 @@ def compute_ff(leg, mass, foot_z):
     dx, dy = x_sign * HIP_DX, y_sign * HIP_DY
     kin = vmc.LegKinematics(L1, L2, dx, dy)
     q = kin.inverse(vmc.Vec3(dx, dy, foot_z))
-    fz = mass * G / 4.0
+    fz = -mass * G / 4.0
     tau = kin.foot_force_to_torques(q, vmc.Vec3(0.0, 0.0, fz))
     return q, [float(tau[i]) for i in range(3)], fz
 
@@ -111,7 +111,7 @@ def compute_ff(leg, mass, foot_z):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--leg", type=str, default="0")
-    parser.add_argument("--mass", type=float, default=16.0)
+    parser.add_argument("--mass", type=float, default=1.0)
     parser.add_argument("--foot_z", type=float, default=-0.25)
     parser.add_argument("--sim", action="store_true")
     parser.add_argument("--hold", type=float, default=5.0, help="测试持续时间(s)")
