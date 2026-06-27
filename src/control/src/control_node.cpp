@@ -54,7 +54,7 @@ constexpr float KP_TRANS=100.f, KD_TRANS=5.f;    // S 曲线过渡
 
 // ── 高度参数（足端 Z，负=向下，髋关节坐标系） ──
 constexpr float CROUCH_Z = -0.15f;        // 趴下 (m)
-constexpr float DEFAULT_STAND_Z = -0.25f; // 默认站立 (m)
+constexpr float DEFAULT_STAND_Z = -0.2f; // 默认站立 (m)
 constexpr float MAX_STAND_Z = -0.38f;     // 最高站立 (m)
 constexpr float HEIGHT_SMOOTH = 0.03f;    // 高度平滑速率 (m/s)
 
@@ -409,7 +409,7 @@ private:
     }
 
     void trot_step() {
-        float sx = trot_step_, sy = -trot_lat_, yaw = trot_yaw_;
+        float sx = trot_step_, sy = trot_lat_, yaw = trot_yaw_;
 
         for (int i = 0; i < 4; ++i) {
             float raw_p = std::fmod(trot_t_/TROT_CYCLE + PHASE_OFF[i], 1.f);

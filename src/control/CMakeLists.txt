@@ -32,7 +32,17 @@ target_include_directories(quad_control PRIVATE ${KIN_INC} ${MOTOR_INC})
 ament_target_dependencies(quad_control rclcpp sensor_msgs)
 target_link_libraries(quad_control ${MOTOR_LIBS} spdlog fmt pthread)
 
-install(TARGETS quad_control DESTINATION lib/${PROJECT_NAME})
+add_executable(hold_node src/hold_node.cpp ${KIN_SRC})
+target_include_directories(hold_node PRIVATE ${KIN_INC} ${MOTOR_INC})
+ament_target_dependencies(hold_node rclcpp)
+target_link_libraries(hold_node ${MOTOR_LIBS} spdlog fmt pthread)
+
+add_executable(read_node src/read_node.cpp)
+target_include_directories(read_node PRIVATE ${MOTOR_INC})
+ament_target_dependencies(read_node rclcpp)
+target_link_libraries(read_node ${MOTOR_LIBS} spdlog fmt pthread)
+
+install(TARGETS quad_control hold_node read_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
 ament_package()
